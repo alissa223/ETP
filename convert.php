@@ -1,246 +1,266 @@
-<?php
-$filePicked = new Func("filePicked", function($oEvent = null) use (&$parseExcel) {
-  $oFile = get(get(get($oEvent, "target"), "files"), 0.0);
-  $sFilename = get($oFile, "name");
-  call($parseExcel, $oFile);
-});
-$copy = new Func("copy", function() use (&$document, &$alert) {
-  $copyText = call_method($document, "getElementById", "ediholder");
-  call_method($copyText, "select");
-  call_method($copyText, "setSelectionRange", 0.0, 99999.0);
-  call_method($document, "execCommand", "copy");
-  call($alert, "Text Copied!");
-});
-$get_date_str = new Func("get_date_str", function($d = null, $type = null) use (&$String) {
-  $now = $d;
-  $dt = call_method($now, "getDate");
-  $dt = get(call($String, $dt), "length") < 2.0 ? _plus(call($String, "0"), call($String, $dt)) : $dt;
-  $hrs = call_method($now, "getHours");
-  $hrs = get(call($String, $hrs), "length") < 2.0 ? _plus(call($String, "0"), call($String, $hrs)) : $hrs;
-  $min = call_method($now, "getMinutes");
-  $min = get(call($String, $min), "length") < 2.0 ? _plus(call($String, "0"), call($String, $min)) : $min;
-  $sec = call_method($now, "getSeconds");
-  $sec = get(call($String, $sec), "length") < 2.0 ? _plus(call($String, "0"), call($String, $sec)) : $sec;
-  $mth = _plus(call_method($now, "getMonth"), 1.0);
-  $mth = get(call($String, $mth), "length") < 2.0 ? _plus(call($String, "0"), call($String, $mth)) : $mth;
-  if (eq($type, "daterawonly")) {
-    return _concat(call_method($now, "getFullYear"), "", call($String, $mth), "", call($String, $dt));
-  } else if (eq($type, "timetominrawonly")) {
-    return _concat(call($String, $hrs), "", call($String, $min));
-  } else {
-    return _concat(call_method($now, "getFullYear"), "", call($String, $mth), "", call($String, $dt), "", call($String, $hrs), "", call($String, $min), "", call($String, $sec));
-  }
+<?php 
+$var = "parseExcel = function(file) {
+            var reader = new FileReader();
+
+            reader.onload = function(e) {
+              var data = e.target.result;
+              var workbook = XLSX.read(data, {
+                type: 'binary'
+              });
+
+              workbook.SheetNames.forEach(function(sheetName) {
+                // Here is your object
+                //var XL_row_object = XLSX.utils.sheet_to_row_object_array(workbook.Sheets[sheetName]);
+                var XL_row_object = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+                //var json_object = JSON.stringify(XL_row_object);
+                //console.log(XL_row_object)
+                //console.log(json_object);
+                var line = 0;
+                var contcount = 0;
+                var allRows = XL_row_object.split(/\\r?\\n|\\r/);
+                //var table = '<table>';
+                var dt = new Date();
+                var refno = get_date_str(dt, \"\");
+                var edi = \"UNB+UNOA:2+KMT+\"+$(\"#recv_code\").val()+\"+\"+get_date_str(dt, \"daterawonly\")+\":\"+get_date_str(dt, \"timetominrawonly\")+\"+\"+refno+\"'\\n\"; 
+                edi += \"UNH+\"+refno+\"+COPRAR:D:00B:UN:SMDG21+LOADINGCOPRAR'\\n\"; line++;
+                                
+                //process header
+                var report_dt = \"\"; var voyage = \"\"; var vslname = \"\"; var callsign = \"\"; var opr = \"\";
+                for (var singleRow = 0; singleRow < allRows.length; singleRow++) {
+                    if(singleRow>6) break;
+                    let rowCells = allRows[singleRow].split(',');
+                    if(singleRow==1) {
+                        let tmpdt = rowCells[1].split('/');
+                        let day = tmpdt[0];
+                        let month = tmpdt[1];
+                        let tmpyear = tmpdt[2].split(' ');
+                        let report_date = new Date(tmpyear[0] + \"-\" + month + \"-\" + day + \" \" + tmpyear[1]);
+                        report_dt = get_date_str(report_date, \"\");
+                    }
+                    if(singleRow==3) {
+                        if(typeof rowCells[3]!=\"undefined\") {
+                            let tmp = rowCells[3].split('/');
+                            voyage = tmp[0];
+                            callsign = tmp[1];
+                            opr = tmp[2];
+                            vslname = rowCells[1];
+                        }
+                    }
+                }                
+                edi += \"BGM+45+\"+report_dt+\"+5'\\n\"; line++;
+                edi += \"TDT+20+\"+voyage+\"+1++172:\"+opr+\"+++\"+$(\"#callsign_code\").val()+\":103::\"+vslname+\"'\\n\"; line++;
+                edi += \"RFF+VON:\"+voyage+\"'\\n\"; line++;
+                edi += \"NAD+CA+\"+opr+\"'\\n\"; line++;
+                let tmp; let dim;
+                for (singleRow = 0; singleRow < allRows.length; singleRow++) {
+                  if(typeof allRows[singleRow]!=\"undefined\") {
+                    //let rowCells = allRows[singleRow].split(',');
+                    let rowCells = CSVtoArray(allRows[singleRow]);
+                    if(singleRow>7) {
+                        contcount++;
+                        //rowCells[3] //5 - F, 4 - E
+                        let fe = \"5\";
+                        if(typeof rowCells[3]!=\"undefined\" && rowCells[3]==\"E\") fe = \"4\";
+                        //2 TS - N, 6 TS - Y
+                        let type = \"2\";
+                        if(typeof rowCells[11]!=\"undefined\" && rowCells[11]==\"Y\") type = \"6\";
+                        
+                        if(typeof rowCells[1]!=\"undefined\" && typeof rowCells[7]!=\"undefined\") { edi += \"EQD+CN+\"+rowCells[1]+\"+\"+rowCells[7]+\":102:5++\"+type+\"+\"+fe+\"'\\n\"; line++; }
+                        if(typeof rowCells[6]!=\"undefined\") { edi += \"LOC+11+\"+rowCells[5]+\":139:6'\\n\"; line++; }
+                        if(typeof rowCells[6]!=\"undefined\") { edi += \"LOC+7+\"+rowCells[6]+\":139:6'\\n\"; line++; }
+                        if(typeof rowCells[19]!=\"undefined\") { edi += \"LOC+9+\"+rowCells[19]+\":139:6'\\n\"; line++; }
+                        if(typeof rowCells[13]!=\"undefined\") { edi += \"MEA+AAE+VGM+KGM:\"+rowCells[13]+\"'\\n\"; line++; }
+                        if(typeof rowCells[17]!=\"undefined\" && $.trim(rowCells[17])!=\"\" && $.trim(rowCells[17])!=\"/\") {
+                          tmp = rowCells[17].split(',');
+                          for(let i=0; i<tmp.length; i++) {
+                              dim = rowCells[17].split('/');
+                              if($.trim(dim[0])==\"OF\") {
+                                  edi += \"DIM+5+CMT:\"+$.trim(dim[1])+\"'\\n\"; line++;
+                              }
+                              if($.trim(dim[0])==\"OB\") {
+                                  edi += \"DIM+6+CMT:\"+$.trim(dim[1])+\"'\\n\"; line++;
+                              }
+                              if($.trim(dim[0])==\"OR\") {
+                                  edi += \"DIM+7+CMT::\"+$.trim(dim[1])+\"'\\n\"; line++;
+                              }
+                              if($.trim(dim[0])==\"OL\") {
+                                  edi += \"DIM+8+CMT::\"+$.trim(dim[1])+\"'\\n\"; line++;
+                              }
+                              if($.trim(dim[0])==\"OH\") {
+                                  edi += \"DIM+9+CMT:::\"+$.trim(dim[1])+\"'\\n\"; line++;
+                              }
+                          }
+                        }
+                        if(typeof rowCells[15]!=\"undefined\" && $.trim(rowCells[15])!=\"\" && $.trim(rowCells[15])!=\"/\") {
+                          let temperature = rowCells[15];
+                          temperature = temperature.replace(\" \", \"\");
+                          temperature = temperature.replace(\"C\", \"\");
+                          temperature = temperature.replace(\"+\", \"\");
+                          edi += \"TMP+2+\"+temperature+\":CEL'\\n\"; line++;
+                        }
+                        if(typeof rowCells[25]!=\"undefined\" && $.trim(rowCells[25])!=\"\" && $.trim(rowCells[25])!=\"/\") {
+                          let tmp = rowCells[25].split(',');
+                          if(tmp[0]==\"L\") {
+                              edi += \"SEL+\"+tmp[1]+\"+CA'\\n\"; line++; //seal L - CA, S - SH, M - CU
+                          }
+                          if(tmp[0]==\"S\") {
+                              edi += \"SEL+\"+tmp[1]+\"+SH'\\n\"; line++; //seal L - CA, S - SH, M - CU
+                          }
+                          if(tmp[0]==\"M\") {
+                              edi += \"SEL+\"+tmp[1]+\"+CU'\\n\"; line++; //seal L - CA, S - SH, M - CU
+                          }
+                        }
+                        if(typeof rowCells[8]!=\"undefined\") { edi += \"FTX+AAI+++\"+rowCells[8]+\"'\\n\"; line++; }                      
+                        
+                        if(typeof rowCells[12]!=\"undefined\" && $.trim(rowCells[12])!=\"\" && $.trim(rowCells[12])!=\"/\") {
+                          edi += \"FTX+AAA+++\"+$.trim(cleanString(rowCells[12]))+\"'\\n\"; line++;
+                        }
+                        if(typeof rowCells[18]!=\"undefined\" && $.trim(rowCells[18])!=\"\" && $.trim(rowCells[18])!=\"/\") {
+                          edi += \"FTX+HAN++\"+rowCells[18]+\"'\\n\"; line++;
+                        }
+                        if(typeof rowCells[14]!=\"undefined\" && rowCells[14]!=\"\" && $.trim(rowCells[14])!=\"/\") {
+                          tmp = rowCells[14].split('/');
+                          edi += \"DGS+IMD+\"+tmp[0]+\"+\"+tmp[1]+\"'\\n\"; line++;
+                        }
+                        if(typeof rowCells[2]!=\"undefined\" && $.trim(rowCells[2])!=\"\") { edi += \"NAD+CF+\"+rowCells[2]+\":160:ZZZ'\\n\"; line++; } //box 
+                        //if(opr!=\"\") { edi += \"NAD+CA+\"+opr+\":160:ZZZ'\\n\"; line++; } //vsl
+                        //if(typeof rowCells[27]!=\"undefined\" && $.trim(rowCells[27])!=\"\")  { edi += \"NAD+GF+\"+rowCells[27]+\":160:ZZZ'\\n\"; line++; } //slot
+                    }                    
+
+                    /*if (singleRow === 0) {
+                      table += '<thead>';
+                      table += '<tr>';
+                    } else {
+                      table += '<tr>';
+                    }
+                    var rowCells = allRows[singleRow].split(',');
+                    for (let rowCell = 0; rowCell < rowCells.length; rowCell++) {
+                      if (singleRow === 0) {
+                        table += '<th>';
+                        table += rowCells[rowCell];
+                        table += '</th>';
+                      } else {
+                        table += '<td>';
+                        table += rowCells[rowCell];
+                        table += '</td>';
+                      }
+                    }
+                    if (singleRow === 0) {
+                      table += '</tr>';
+                      table += '</thead>';
+                      table += '<tbody>';
+                    } else {
+                      table += '</tr>';
+                    }*/
+                  }
+                } 
+                contcount--;
+                edi += \"CNT+16:\"+contcount+\"'\\n\"; line++; line++;
+                edi += \"UNT+\"+line+\"+\"+refno+\"'\\n\";
+                edi += \"UNZ+1+\"+refno+\"'\";
+                //table += '</tbody>';
+                //table += '</table>';
+                $('#my_file_output').val(edi);
+
+              })
+
+            };
+
+            reader.onerror = function(ex) {
+              console.log(ex);
+            };
+
+            reader.readAsBinaryString(file);
+          };
+        
+        var oFileIn;
+
+        $(function() {
+            oFileIn = document.getElementById('my_file_input');
+            if(oFileIn.addEventListener) {
+                oFileIn.addEventListener('change', filePicked, false);
+            }
+        });
 
 
-});
-$CSVtoArray = new Func("CSVtoArray", function($text = null) use (&$undefined) {
-  $re_valid = new RegExp("^\\s*(?:'[^'\\\\]*(?:\\\\[\\S\\s][^'\\\\]*)*'|\"[^\"\\\\]*(?:\\\\[\\S\\s][^\"\\\\]*)*\"|[^,'\"\\s\\\\]*(?:\\s+[^,'\"\\s\\\\]+)*)\\s*(?:,\\s*(?:'[^'\\\\]*(?:\\\\[\\S\\s][^'\\\\]*)*'|\"[^\"\\\\]*(?:\\\\[\\S\\s][^\"\\\\]*)*\"|[^,'\"\\s\\\\]*(?:\\s+[^,'\"\\s\\\\]+)*)\\s*)*\$", "");
-  $re_value = new RegExp("(?!\\s*\$)\\s*(?:'([^'\\\\]*(?:\\\\[\\S\\s][^'\\\\]*)*)'|\"([^\"\\\\]*(?:\\\\[\\S\\s][^\"\\\\]*)*)\"|([^,'\"\\s\\\\]*(?:\\s+[^,'\"\\s\\\\]+)*))\\s*(?:,|\$)", "g");
-  if (not(call_method($re_valid, "test", $text))) {
-    return Object::$null;
-  }
-  $a = new Arr();
-  call_method($text, "replace", $re_value, new Func(function($m0 = null, $m1 = null, $m2 = null, $m3 = null) use (&$undefined, &$a) {
-    if ($m1 !== $undefined) {
-      call_method($a, "push", call_method($m1, "replace", new RegExp("\\\\'", "g"), "'"));
-    } else if ($m2 !== $undefined) {
-      call_method($a, "push", call_method($m2, "replace", new RegExp("\\\\\"", "g"), "\""));
-    } else if ($m3 !== $undefined) {
-      call_method($a, "push", $m3);
-    }
+        function filePicked(oEvent) {
+            // Get The File From The Input
+            var oFile = oEvent.target.files[0];
+            var sFilename = oFile.name;
+            parseExcel(oFile)
+            
+        }
+        
+        function copy() {
+            /* Get the text field */
+            var copyText = document.getElementById(\"ediholder\");
 
+            /* Select the text field */
+            copyText.select();
+            copyText.setSelectionRange(0, 99999); /* For mobile devices */
 
-    return "";
-  }));
-  if (is(call_method(new RegExp(",\\s*\$", ""), "test", $text))) {
-    call_method($a, "push", "");
-  }
-  return $a;
-});
-$cleanString = new Func("cleanString", function($input = null) {
-  $output = "";
-  for ($i = 0.0; $i < get($input, "length"); $i++) {
-    if (call_method($input, "charCodeAt", $i) <= 127.0) {
-      $output = _plus($output, call_method($input, "charAt", $i));
-    }
-  }
-  return $output;
-});
-$parseExcel = new Func(function($file = null) use (&$FileReader, &$XLSX, &$Date, &$get_date_str, &$«24», &$CSVtoArray, &$cleanString, &$console) {
-  $reader = _new($FileReader);
-  set($reader, "onload", new Func(function($e = null) use (&$XLSX, &$Date, &$get_date_str, &$«24», &$CSVtoArray, &$cleanString) {
-    $data = get(get($e, "target"), "result");
-    $workbook = call_method($XLSX, "read", $data, new Object("type", "binary"));
-    call_method(get($workbook, "SheetNames"), "forEach", new Func(function($sheetName = null) use (&$XLSX, &$workbook, &$Date, &$get_date_str, &$«24», &$CSVtoArray, &$cleanString) {
-      $XL_row_object = call_method(get($XLSX, "utils"), "sheet_to_csv", get(get($workbook, "Sheets"), $sheetName));
-      $line = 0.0;
-      $contcount = 0.0;
-      $allRows = call_method($XL_row_object, "split", new RegExp("\\r?\\n|\\r", ""));
-      $dt = _new($Date);
-      $refno = call($get_date_str, $dt, "");
-      $edi = _concat("UNB+UNOA:2+KMT+", call_method(call($«24», "#recv_code"), "val"), "+", call($get_date_str, $dt, "daterawonly"), ":", call($get_date_str, $dt, "timetominrawonly"), "+", $refno, "'\n");
-      $edi = _plus($edi, _concat("UNH+", $refno, "+COPRAR:D:00B:UN:SMDG21+LOADINGCOPRAR'\n"));
-      $line++;
-      $report_dt = "";
-      $voyage = "";
-      $vslname = "";
-      $callsign = "";
-      $opr = "";
-      for ($singleRow = 0.0; $singleRow < get($allRows, "length"); $singleRow++) {
-        if ($singleRow > 6.0) {
-          break;
+            /* Copy the text inside the text field */
+            document.execCommand(\"copy\");
+
+            /* Alert the copied text */
+            alert(\"Text Copied!\");
+        } 
+        
+        function get_date_str(d, type) {
+            var now = d;
+            var dt = now.getDate();
+            dt = (String(dt).length<2)? String(\"0\") + String(dt) : dt;
+            var hrs = now.getHours();
+            hrs = (String(hrs).length<2)? String(\"0\") + String(hrs) : hrs;
+            var min = now.getMinutes();
+            min = (String(min).length<2)? String(\"0\") + String(min) : min;
+            var sec = now.getSeconds();
+            sec = (String(sec).length<2)? String(\"0\") + String(sec) : sec;
+            var mth = (now.getMonth() + 1);
+            mth = (String(mth).length<2)? String(\"0\") + String(mth) : mth;
+            if(type==\"daterawonly\") {
+                return now.getFullYear()+''+String(mth)+''+String(dt);
+            } else if(type==\"timetominrawonly\"){
+                return String(hrs)+''+String(min);
+            } else {
+                return now.getFullYear()+''+String(mth)+''+String(dt)+''+String(hrs)+''+String(min)+''+String(sec);
+            }
+            //return now.getHours()+':'+String(min)+':'+String(sec);
         }
-        $rowCells = call_method(get($allRows, $singleRow), "split", ",");
-        if (eq($singleRow, 1.0)) {
-          $tmpdt = call_method(get($rowCells, 1.0), "split", "/");
-          $day = get($tmpdt, 0.0);
-          $month = get($tmpdt, 1.0);
-          $tmpyear = call_method(get($tmpdt, 2.0), "split", " ");
-          $report_date = _new($Date, _concat(get($tmpyear, 0.0), "-", $month, "-", $day, " ", get($tmpyear, 1.0)));
-          $report_dt = call($get_date_str, $report_date, "");
+        
+        function CSVtoArray(text) {
+            var re_valid = /^\\s*(?:'[^'\\\\]*(?:\\\\[\\S\\s][^'\\\\]*)*'|\"[^\"\\\\]*(?:\\\\[\\S\\s][^\"\\\\]*)*\"|[^,'\"\\s\\\\]*(?:\\s+[^,'\"\\s\\\\]+)*)\\s*(?:,\\s*(?:'[^'\\\\]*(?:\\\\[\\S\\s][^'\\\\]*)*'|\"[^\"\\\\]*(?:\\\\[\\S\\s][^\"\\\\]*)*\"|[^,'\"\\s\\\\]*(?:\\s+[^,'\"\\s\\\\]+)*)\\s*)*$/;
+            var re_value = /(?!\\s*$)\\s*(?:'([^'\\\\]*(?:\\\\[\\S\\s][^'\\\\]*)*)'|\"([^\"\\\\]*(?:\\\\[\\S\\s][^\"\\\\]*)*)\"|([^,'\"\\s\\\\]*(?:\\s+[^,'\"\\s\\\\]+)*))\\s*(?:,|$)/g;
+
+            // Return NULL if input string is not well formed CSV string.
+            if (!re_valid.test(text)) return null;
+
+            var a = []; // Initialize array to receive values.
+            text.replace(re_value, // \"Walk\" the string using replace with callback.
+                function(m0, m1, m2, m3) {
+
+                    // Remove backslash from \\' in single quoted values.
+                    if (m1 !== undefined) a.push(m1.replace(/\\\\'/g, \"'\"));
+
+                    // Remove backslash from \\\" in double quoted values.
+                    else if (m2 !== undefined) a.push(m2.replace(/\\\\\"/g, '\"'));
+                    else if (m3 !== undefined) a.push(m3);
+                    return ''; // Return empty string.
+                });
+
+            // Handle special case of empty last value.
+            if (/,\\s*$/.test(text)) a.push('');
+            return a;
+        };
+        
+        function cleanString(input) {
+            var output = \"\";
+            for (var i=0; i<input.length; i++) {
+                if (input.charCodeAt(i) <= 127) {
+                    output += input.charAt(i);
+                }
+            }
+            return output;
         }
-        if (eq($singleRow, 3.0)) {
-          if (!eq(_typeof(get($rowCells, 3.0)), "undefined")) {
-            $tmp = call_method(get($rowCells, 3.0), "split", "/");
-            $voyage = get($tmp, 0.0);
-            $callsign = get($tmp, 1.0);
-            $opr = get($tmp, 2.0);
-            $vslname = get($rowCells, 1.0);
-          }
-        }
-      }
-      $edi = _plus($edi, _concat("BGM+45+", $report_dt, "+5'\n"));
-      $line++;
-      $edi = _plus($edi, _concat("TDT+20+", $voyage, "+1++172:", $opr, "+++", call_method(call($«24», "#callsign_code"), "val"), ":103::", $vslname, "'\n"));
-      $line++;
-      $edi = _plus($edi, _concat("RFF+VON:", $voyage, "'\n"));
-      $line++;
-      $edi = _plus($edi, _concat("NAD+CA+", $opr, "'\n"));
-      $line++;
-      for ($singleRow = 0.0; $singleRow < get($allRows, "length"); $singleRow++) {
-        if (!eq(_typeof(get($allRows, $singleRow)), "undefined")) {
-          $rowCells = call($CSVtoArray, get($allRows, $singleRow));
-          if ($singleRow > 7.0) {
-            $contcount++;
-            $fe = "5";
-            if (!eq(_typeof(get($rowCells, 3.0)), "undefined") && eq(get($rowCells, 3.0), "E")) {
-              $fe = "4";
-            }
-            $type = "2";
-            if (!eq(_typeof(get($rowCells, 11.0)), "undefined") && eq(get($rowCells, 11.0), "Y")) {
-              $type = "6";
-            }
-            if (!eq(_typeof(get($rowCells, 1.0)), "undefined") && !eq(_typeof(get($rowCells, 7.0)), "undefined")) {
-              $edi = _plus($edi, _concat("EQD+CN+", get($rowCells, 1.0), "+", get($rowCells, 7.0), ":102:5++", $type, "+", $fe, "'\n"));
-              $line++;
-            }
-            if (!eq(_typeof(get($rowCells, 6.0)), "undefined")) {
-              $edi = _plus($edi, _concat("LOC+11+", get($rowCells, 5.0), ":139:6'\n"));
-              $line++;
-            }
-            if (!eq(_typeof(get($rowCells, 6.0)), "undefined")) {
-              $edi = _plus($edi, _concat("LOC+7+", get($rowCells, 6.0), ":139:6'\n"));
-              $line++;
-            }
-            if (!eq(_typeof(get($rowCells, 19.0)), "undefined")) {
-              $edi = _plus($edi, _concat("LOC+9+", get($rowCells, 19.0), ":139:6'\n"));
-              $line++;
-            }
-            if (!eq(_typeof(get($rowCells, 13.0)), "undefined")) {
-              $edi = _plus($edi, _concat("MEA+AAE+VGM+KGM:", get($rowCells, 13.0), "'\n"));
-              $line++;
-            }
-            if (!eq(_typeof(get($rowCells, 17.0)), "undefined") && !eq(call_method($«24», "trim", get($rowCells, 17.0)), "") && !eq(call_method($«24», "trim", get($rowCells, 17.0)), "/")) {
-              $tmp = call_method(get($rowCells, 17.0), "split", ",");
-              for ($i = 0.0; $i < get($tmp, "length"); $i++) {
-                $dim = call_method(get($rowCells, 17.0), "split", "/");
-                if (eq(call_method($«24», "trim", get($dim, 0.0)), "OF")) {
-                  $edi = _plus($edi, _concat("DIM+5+CMT:", call_method($«24», "trim", get($dim, 1.0)), "'\n"));
-                  $line++;
-                }
-                if (eq(call_method($«24», "trim", get($dim, 0.0)), "OB")) {
-                  $edi = _plus($edi, _concat("DIM+6+CMT:", call_method($«24», "trim", get($dim, 1.0)), "'\n"));
-                  $line++;
-                }
-                if (eq(call_method($«24», "trim", get($dim, 0.0)), "OR")) {
-                  $edi = _plus($edi, _concat("DIM+7+CMT::", call_method($«24», "trim", get($dim, 1.0)), "'\n"));
-                  $line++;
-                }
-                if (eq(call_method($«24», "trim", get($dim, 0.0)), "OL")) {
-                  $edi = _plus($edi, _concat("DIM+8+CMT::", call_method($«24», "trim", get($dim, 1.0)), "'\n"));
-                  $line++;
-                }
-                if (eq(call_method($«24», "trim", get($dim, 0.0)), "OH")) {
-                  $edi = _plus($edi, _concat("DIM+9+CMT:::", call_method($«24», "trim", get($dim, 1.0)), "'\n"));
-                  $line++;
-                }
-              }
-            }
-            if (!eq(_typeof(get($rowCells, 15.0)), "undefined") && !eq(call_method($«24», "trim", get($rowCells, 15.0)), "") && !eq(call_method($«24», "trim", get($rowCells, 15.0)), "/")) {
-              $temperature = get($rowCells, 15.0);
-              $temperature = call_method($temperature, "replace", " ", "");
-              $temperature = call_method($temperature, "replace", "C", "");
-              $temperature = call_method($temperature, "replace", "+", "");
-              $edi = _plus($edi, _concat("TMP+2+", $temperature, ":CEL'\n"));
-              $line++;
-            }
-            if (!eq(_typeof(get($rowCells, 25.0)), "undefined") && !eq(call_method($«24», "trim", get($rowCells, 25.0)), "") && !eq(call_method($«24», "trim", get($rowCells, 25.0)), "/")) {
-              $tmp = call_method(get($rowCells, 25.0), "split", ",");
-              if (eq(get($tmp, 0.0), "L")) {
-                $edi = _plus($edi, _concat("SEL+", get($tmp, 1.0), "+CA'\n"));
-                $line++;
-              }
-              if (eq(get($tmp, 0.0), "S")) {
-                $edi = _plus($edi, _concat("SEL+", get($tmp, 1.0), "+SH'\n"));
-                $line++;
-              }
-              if (eq(get($tmp, 0.0), "M")) {
-                $edi = _plus($edi, _concat("SEL+", get($tmp, 1.0), "+CU'\n"));
-                $line++;
-              }
-            }
-            if (!eq(_typeof(get($rowCells, 8.0)), "undefined")) {
-              $edi = _plus($edi, _concat("FTX+AAI+++", get($rowCells, 8.0), "'\n"));
-              $line++;
-            }
-            if (!eq(_typeof(get($rowCells, 12.0)), "undefined") && !eq(call_method($«24», "trim", get($rowCells, 12.0)), "") && !eq(call_method($«24», "trim", get($rowCells, 12.0)), "/")) {
-              $edi = _plus($edi, _concat("FTX+AAA+++", call_method($«24», "trim", call($cleanString, get($rowCells, 12.0))), "'\n"));
-              $line++;
-            }
-            if (!eq(_typeof(get($rowCells, 18.0)), "undefined") && !eq(call_method($«24», "trim", get($rowCells, 18.0)), "") && !eq(call_method($«24», "trim", get($rowCells, 18.0)), "/")) {
-              $edi = _plus($edi, _concat("FTX+HAN++", get($rowCells, 18.0), "'\n"));
-              $line++;
-            }
-            if (!eq(_typeof(get($rowCells, 14.0)), "undefined") && !eq(get($rowCells, 14.0), "") && !eq(call_method($«24», "trim", get($rowCells, 14.0)), "/")) {
-              $tmp = call_method(get($rowCells, 14.0), "split", "/");
-              $edi = _plus($edi, _concat("DGS+IMD+", get($tmp, 0.0), "+", get($tmp, 1.0), "'\n"));
-              $line++;
-            }
-            if (!eq(_typeof(get($rowCells, 2.0)), "undefined") && !eq(call_method($«24», "trim", get($rowCells, 2.0)), "")) {
-              $edi = _plus($edi, _concat("NAD+CF+", get($rowCells, 2.0), ":160:ZZZ'\n"));
-              $line++;
-            }
-          }
-        }
-      }
-      $contcount--;
-      $edi = _plus($edi, _concat("CNT+16:", $contcount, "'\n"));
-      $line++;
-      $line++;
-      $edi = _plus($edi, _concat("UNT+", $line, "+", $refno, "'\n"));
-      $edi = _plus($edi, _concat("UNZ+1+", $refno, "'"));
-      call_method(call($«24», "#my_file_output"), "val", $edi);
-    }));
-  }));
-  set($reader, "onerror", new Func(function($ex = null) use (&$console) {
-    call_method($console, "log", $ex);
-  }));
-  call_method($reader, "readAsBinaryString", $file);
-});
-call($«24», new Func(function() use (&$oFileIn, &$document, &$filePicked) {
-  $oFileIn = call_method($document, "getElementById", "my_file_input");
-  if (is(get($oFileIn, "addEventListener"))) {
-    call_method($oFileIn, "addEventListener", "change", $filePicked, false);
-  }
-}));
+";
 ?>
